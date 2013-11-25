@@ -76,7 +76,7 @@ void do_program(void) {
 		temp4 = get_temp(3);
 		adjust_pwm(temp2, 0);
 		freq = get_freq();
- 		fprintf(fp,"Freq = %d, Temp = %d,%d \r\n", freq, temp3, temp4);
+ 		fprintf(fp,"Freq = %ld, Temp = %d,%d \r\n", freq, temp3, temp4);
 		_delay_ms(200);
 	}
 }
