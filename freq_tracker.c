@@ -23,24 +23,27 @@ void init_freq(void);
 void init_interrupts();
 void adjust_pwm(unsigned int, unsigned int);
 unsigned int get_temp(unsigned int);
-unsigned long get_freq(void);
+unsigned long get_freq(unsigned int*);
 
-volatile unsigned int global_Counter = 0;
+unsigned long global_Counter;
 
-/* this is the high_low server running on serial on an avr */
-/* it sets up the serial communication for 1200 baud */
-/* note that the random number generator will always generate the same sequence */
+/* This is the frequency tracker code running on an AVR */
+/* Communicates serially to a computer for displaying information */
+/* Handles temperature control and freqency measurement */
 int main(void) { 
 	init_serial();
 	init_temp();
 	init_pwm();
 	init_freq();
-	//init_interrupts();
 	_delay_ms(2000);
 	while(1) { 
 		do_program();
 	}   
 	return 0;
+}
+
+ISR(TIMER1_OVF_vect) {
+	global_Counter++;
 }
 
 /* Initializes AVR USART for 1200 baud (assuming 1MHz clock) */
@@ -55,29 +58,23 @@ void init_serial(void) {
 	stdout=&serial_stream;
 }   
 
-/* Server code... */
+/* Program to do */
 void do_program(void) {
-	FILE *fp, *fpr;
+	unsigned long freq; //Long for holding the value
+	unsigned int time, temp1, temp2; //Only have two temp sensors
 
-	unsigned long freq;
-	unsigned int temp1, temp2, temp3, temp4;
-
-	fp=stdout;
- 
-	fprintf(fp,"Welcome to the Quartz-Crystal Frequency Tracker \r\n");
+	fprintf(stdout,"Welcome to the Quartz-Crystal Frequency Tracker \r\n");
 
 	_delay_ms(200);
 
  	while(1) {
 		//fprintf(fp,"Getting temps \r\n");
-		temp1 = get_temp(1);
-		temp2 = get_temp(1);
-		temp3 = get_temp(2);
-		temp4 = get_temp(3);
-		adjust_pwm(temp2, 0);
-		freq = get_freq();
- 		fprintf(fp,"Freq = %ld, Temp = %d,%d \r\n", freq, temp3, temp4);
-		_delay_ms(200);
+		//temp1 = get_temp(1);
+		//temp2 = get_temp(2);
+		//adjust_pwm((temp1+temp2)/2, 0);
+		freq = get_freq(&time);
+ 		fprintf(stdout,"Freq = %ld, global_Counter = %ld, time = %d\r\n", freq, global_Counter,time);
+		_delay_ms(200); // For stability
 	}
 }
 
@@ -125,23 +122,18 @@ unsigned int get_temp(unsigned int channel) {
 	unsigned char i = 8;
 	unsigned int temp = 0;
 
-/*
+
+	// Selecting ADC channel to look at.
 	switch (channel) {
-		case 0:
+		case 1:
 			ADMUX = 0x40;
 			break;
-		case 1:
-			ADMUX = 0x41;
-			break;
 		case 2:
-			ADMUX = 0x42;
-			break;
-		case 3:
-			ADMUX = 0x43;
+			ADMUX = 0x41;
 			break;	
 	}
-*/
-	ADMUX = 0x40;
+
+	// Start ADC and wait for it to get 8 values
 	ADCSRA |= (1<<ADSC);
 	while (i--) {
 		while ((ADCSRA & (1 << ADSC)) != 0);
@@ -149,6 +141,7 @@ unsigned int get_temp(unsigned int channel) {
 		_delay_ms(50);
 	}
 
+	// Calculate temp
 	temp = temp / 16;
 
 	return temp;
@@ -173,50 +166,78 @@ void adjust_pwm(unsigned int temp, unsigned int channel) {
 	TCCR2B = 0x05;
 }
 
+// Initialize frequency counter
 void init_freq(void) {
 	DDRB &= 0xFE;
 	TCCR1A = 0x00;
 	TCCR1B = 0xC1;
+	TIMSK1 = 0x01;
 }
 
 void init_interrupts(void) {
-	
+	sei();
+	global_Counter = 0;
 }
 
-unsigned long get_freq(void) {
+void turn_off_interrupts(void) {
+	cli();
+}
+
+// Counting frequency
+unsigned long get_freq(unsigned int* period_time) {
 	unsigned long freq;
+	unsigned int time;
 	unsigned long period = 0;
-	unsigned long initial_count = 0;
+	unsigned long count = 0;	
 	char lock = 0;
-
-	TCCR1B = 0xC0;
-	global_Counter = 0;
+	
+	TIFR1 = 0xFF;
+	while(!((TIFR1 >> ICF1) & 0x01));
+	// Start at zero count
+	TCCR1B = 0xC0; // Timer off
+	init_interrupts();
 	TCNT1 = 0x00;
-	TIFR1 = 0xff;
-	TCCR1B = 0xC1;
+	TIFR1 = 0xff; // Note: Clears all flags
+	TCCR1B = 0xC1; // Timer on
 
+/*
+	// Wait for first input capture
 	while(!((TIFR1 >> ICF1) & 0x01));
 	TIFR1 = 0xFF;
+
+	// Reads in timer value from the registers.
 	initial_count = ICR1L;
 	initial_count = (ICR1H << 8) | initial_count;
+*/
 
+	// Stays here until unlocked
 	while (!lock) {
+		// Checks for input capture
 		if ((TIFR1 >> ICF1) & 0x01) {
 			TIFR1 = 0xff;
-			freq = ICR1L;
-			freq = (ICR1H << 8) | freq;
+			count = 0; //global_Counter;
+			time = ICR1L;
+			time = (ICR1H << 8) | time;
 			period++;
-			if (freq > 32000 || global_Counter != 0) {
-				freq = (period * 1000000l)/(global_Counter*65536 + (freq-initial_count));
+	
+			// If the timer has past a time (after we have an input capture)
+			// Calculate frequency and unlock
+			if ((time > 32000) || (count != 0)) {
+				
+				freq = (period * 1000000l)/(count*65536 + time);
 				lock = 1;
 			}
 		}
+
+		// If we've gone too long without an input capture frequency must be zero.
 		if (global_Counter > 16) {
 			freq = 0;
 			lock = 1;
 		}
 	}
-
+	
+	turn_off_interrupts();
+	*period_time = time;
 	return freq;
 }
 
