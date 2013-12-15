@@ -23,9 +23,9 @@ void init_freq(void);
 void init_interrupts();
 void adjust_pwm(unsigned int, unsigned int);
 unsigned int get_temp(unsigned int);
-unsigned long get_freq(unsigned int*);
+unsigned long get_freq(unsigned int*, unsigned long*);
 
-unsigned long global_Counter;
+volatile unsigned int global_Counter;
 
 /* This is the frequency tracker code running on an AVR */
 /* Communicates serially to a computer for displaying information */
@@ -60,7 +60,7 @@ void init_serial(void) {
 
 /* Program to do */
 void do_program(void) {
-	unsigned long freq; //Long for holding the value
+	unsigned long freq, periods; //Long for holding the value
 	unsigned int time, temp1, temp2; //Only have two temp sensors
 
 	fprintf(stdout,"Welcome to the Quartz-Crystal Frequency Tracker \r\n");
@@ -72,9 +72,9 @@ void do_program(void) {
 		//temp1 = get_temp(1);
 		//temp2 = get_temp(2);
 		//adjust_pwm((temp1+temp2)/2, 0);
-		freq = get_freq(&time);
- 		fprintf(stdout,"Freq = %ld, global_Counter = %ld, time = %d\r\n", freq, global_Counter,time);
-		_delay_ms(200); // For stability
+		freq = get_freq(&time, &periods);
+ 		fprintf(stdout,"Freq = %ld, time = %d, count = %ld \r\n", freq, time, periods);
+		_delay_ms(500); // For stability
 	}
 }
 
@@ -184,53 +184,43 @@ void turn_off_interrupts(void) {
 }
 
 // Counting frequency
-unsigned long get_freq(unsigned int* period_time) {
+unsigned long get_freq(unsigned int* period_time, unsigned long* periods) {
 	unsigned long freq;
-	unsigned int time;
+	unsigned int time, count;
 	unsigned long period = 0;
-	unsigned long count = 0;	
 	char lock = 0;
-	
+
+	init_interrupts();	
 	TIFR1 = 0xFF;
 	while(!((TIFR1 >> ICF1) & 0x01));
 	// Start at zero count
 	TCCR1B = 0xC0; // Timer off
-	init_interrupts();
+	global_Counter = 0;
 	TCNT1 = 0x00;
 	TIFR1 = 0xff; // Note: Clears all flags
 	TCCR1B = 0xC1; // Timer on
-
-/*
-	// Wait for first input capture
-	while(!((TIFR1 >> ICF1) & 0x01));
-	TIFR1 = 0xFF;
-
-	// Reads in timer value from the registers.
-	initial_count = ICR1L;
-	initial_count = (ICR1H << 8) | initial_count;
-*/
 
 	// Stays here until unlocked
 	while (!lock) {
 		// Checks for input capture
 		if ((TIFR1 >> ICF1) & 0x01) {
 			TIFR1 = 0xff;
-			count = 0; //global_Counter;
+			count = global_Counter;
 			time = ICR1L;
-			time = (ICR1H << 8) | time;
+			time = ((ICR1H << 8) & 0xff00) | (time & 0x00ff);
 			period++;
-	
+			
 			// If the timer has past a time (after we have an input capture)
 			// Calculate frequency and unlock
-			if ((time > 32000) || (count != 0)) {
+			if ((time >= 32000) || (count != 0)) {
 				
-				freq = (period * 1000000l)/(count*65536 + time);
+				freq = (period * 1000000l)/(count*65536 + time + (period / 52));
 				lock = 1;
 			}
 		}
 
 		// If we've gone too long without an input capture frequency must be zero.
-		if (global_Counter > 16) {
+		if (global_Counter >= 16) {
 			freq = 0;
 			lock = 1;
 		}
@@ -238,6 +228,7 @@ unsigned long get_freq(unsigned int* period_time) {
 	
 	turn_off_interrupts();
 	*period_time = time;
+	*periods = period;
 	return freq;
 }
 
