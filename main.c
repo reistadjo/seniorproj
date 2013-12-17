@@ -10,24 +10,28 @@
 #include <avr/interrupt.h>
 #include <string.h>
 
-#include "init.h"
-#include "temp.h"
-#include "freq.h"
-#include "display.h"
+//#include "init.h"
+//#include "temp.h"
+//#include "freq.h"
+//#include "display.h"
 
+#include "lcd.h"
 
 int main() {
-	init();
+//	init();
+	lcd_init(LCD_DISP_ON_CURSOR_BLINK);
 	int temp = 0;
 	int freq = 0;
 	while (1) {
-		temp = get_temp();
+//		temp = get_temp();
 
-		adjust_temp(temp);		
+//		adjust_temp(temp);		
 
-		freq = get_freq();
+//		freq = get_freq();
 
-		display(temp, freq);
+		//display(temp, freq);
+
+		
 	}
 	return 0;
 }

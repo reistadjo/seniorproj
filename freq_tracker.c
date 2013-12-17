@@ -69,9 +69,9 @@ void do_program(void) {
 
  	while(1) {
 		//fprintf(fp,"Getting temps \r\n");
-		//temp1 = get_temp(1);
-		//temp2 = get_temp(2);
-		//adjust_pwm((temp1+temp2)/2, 0);
+		temp1 = get_temp(1);
+		temp2 = get_temp(2);
+		adjust_pwm((temp1+temp2)/2, 0);
 		freq = get_freq(&time, &periods);
  		fprintf(stdout,"Freq = %ld, time = %d, count = %ld \r\n", freq, time, periods);
 		_delay_ms(500); // For stability
@@ -109,10 +109,16 @@ void init_temp(void) {
 
 void init_pwm(void) {
 	DDRD = 0xFF;
-	DDRB |= (1 << 3);
+	DDRB |= (1 << 3) | (1 << 5) | (1 << 6);
+
+	OCR0B = 0xFA;
+	OCR0A = 0xF9;
 
 	OCR2B = 0xFA;
 	OCR2A = 0xF9;
+
+	TCCR0A = 0xB3;
+	TCCR0B = 0x05;
 
 	TCCR2A = 0xB3;
 	TCCR2B = 0x05;
@@ -148,22 +154,30 @@ unsigned int get_temp(unsigned int channel) {
 }
 
 void adjust_pwm(unsigned int temp, unsigned int channel) {
-	TCCR2B = 0x00;	
+	TCCR2B = 0x00;
+	TCCR0B = 0x00;	
 
 	unsigned int temp_temp = (2*temp - TEMP_NUM);
 
 	if (temp_temp <= LOW_CUT) {
 		OCR2B = 0xFF;
 		OCR2A = 0xFF;
+		OCR0B = 0xFF;
+		OCR0A = 0xFF;
 	} else if (temp_temp >= HIGH_CUT) {
 		OCR2B = 0x00;
 		OCR2A = 0x00;
+		OCR0B = 0x00;
+		OCR0A = 0x00;
 	} else {
-		OCR2A = 0x7F;
 		OCR2B = 0x7F;
+		OCR2A = 0x7F;
+		OCR0B = 0x7F;
+		OCR0A = 0x7F;
 	}
 
 	TCCR2B = 0x05;
+	TCCR0B = 0x05;
 }
 
 // Initialize frequency counter
@@ -192,7 +206,7 @@ unsigned long get_freq(unsigned int* period_time, unsigned long* periods) {
 
 	init_interrupts();	
 	TIFR1 = 0xFF;
-	while(!((TIFR1 >> ICF1) & 0x01));
+	while((!((TIFR1 >> ICF1) & 0x01))&&(global_Counter < 16));
 	// Start at zero count
 	TCCR1B = 0xC0; // Timer off
 	global_Counter = 0;
@@ -213,7 +227,7 @@ unsigned long get_freq(unsigned int* period_time, unsigned long* periods) {
 			// If the timer has past a time (after we have an input capture)
 			// Calculate frequency and unlock
 			if ((time >= 32000) || (count != 0)) {
-				
+				// Note: The divide by 52 is a calibration
 				freq = (period * 1000000l)/(count*65536 + time + (period / 52));
 				lock = 1;
 			}
