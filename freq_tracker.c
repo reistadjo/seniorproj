@@ -79,9 +79,13 @@ void do_program(void) {
 }
 
 void init_temp(void) {
+	// All Port C pins to inputs.
 	DDRC = 0;
+	
+	// Make sure the power register lets the ADC run.
 	PRR = 0x00;
 
+	// Set reference and clock.
 	ADMUX |= (0<<REFS1) |
 		(1<<REFS0) | 
 		(0<<ADLAR) |
@@ -89,6 +93,7 @@ void init_temp(void) {
 		(0<<MUX1) |
 		(0<<MUX0);
 
+	// Free running mode
 	ADCSRA |= (1<<ADEN) |
 		(0<<ADSC) |
 		(0<<ADATE) |
@@ -108,15 +113,20 @@ void init_temp(void) {
 }
 
 void init_pwm(void) {
+	// Set all Port D pins to outputs
 	DDRD = 0xFF;
+	// Set pins of 3, 5 and 6 of Port B to output
 	DDRB |= (1 << 3) | (1 << 5) | (1 << 6);
 
+	// Timer/Counter Zero Init
 	OCR0B = 0xFA;
 	OCR0A = 0xF9;
 
+	// Timer/Counter Two Init
 	OCR2B = 0xFA;
 	OCR2A = 0xF9;
 
+	// Inits
 	TCCR0A = 0xB3;
 	TCCR0B = 0x05;
 
@@ -154,28 +164,33 @@ unsigned int get_temp(unsigned int channel) {
 }
 
 void adjust_pwm(unsigned int temp, unsigned int channel) {
+	// Stop counters
 	TCCR2B = 0x00;
 	TCCR0B = 0x00;	
 
 	unsigned int temp_temp = (2*temp - TEMP_NUM);
 
 	if (temp_temp <= LOW_CUT) {
+		// Heat it up
 		OCR2B = 0xFF;
 		OCR2A = 0xFF;
 		OCR0B = 0xFF;
 		OCR0A = 0xFF;
 	} else if (temp_temp >= HIGH_CUT) {
+		// Cool it down
 		OCR2B = 0x00;
 		OCR2A = 0x00;
 		OCR0B = 0x00;
 		OCR0A = 0x00;
 	} else {
+		// Half way, half cold, half hot.
 		OCR2B = 0x7F;
 		OCR2A = 0x7F;
 		OCR0B = 0x7F;
 		OCR0A = 0x7F;
 	}
 
+	// Start counters
 	TCCR2B = 0x05;
 	TCCR0B = 0x05;
 }
@@ -201,7 +216,7 @@ void turn_off_interrupts(void) {
 unsigned long get_freq(unsigned int* period_time, unsigned long* periods) {
 	unsigned long freq;
 	unsigned int time, count;
-	unsigned long period = 0;
+	unsigned long period_count = 0;
 	char lock = 0;
 
 	init_interrupts();	
@@ -220,15 +235,17 @@ unsigned long get_freq(unsigned int* period_time, unsigned long* periods) {
 		if ((TIFR1 >> ICF1) & 0x01) {
 			TIFR1 = 0xff;
 			count = global_Counter;
+
+			// Grab the time
 			time = ICR1L;
 			time = ((ICR1H << 8) & 0xff00) | (time & 0x00ff);
-			period++;
+			period_count++;
 			
 			// If the timer has past a time (after we have an input capture)
 			// Calculate frequency and unlock
 			if ((time >= 32000) || (count != 0)) {
 				// Note: The divide by 52 is a calibration
-				freq = (period * 1000000l)/(count*65536 + time + (period / 52));
+				freq = (period_count * 1000000l)/(count*65536 + time + (period / 52));
 				lock = 1;
 			}
 		}
@@ -241,8 +258,10 @@ unsigned long get_freq(unsigned int* period_time, unsigned long* periods) {
 	}
 	
 	turn_off_interrupts();
+
+	// Purely for debugging purposes.
 	*period_time = time;
-	*periods = period;
+	*periods = period_count;
 	return freq;
 }
 
