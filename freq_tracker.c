@@ -73,7 +73,7 @@ void do_program(void) {
 		temp2 = get_temp(2);
 		adjust_pwm((temp1+temp2)/2, 0);
 		freq = get_freq(&time, &periods);
- 		fprintf(stdout,"Freq = %ld, temp = %d \r\n", freq, (temp1+temp2)/2);
+ 		fprintf(stdout,"Freq = %ld, temp = %d \r\n", freq, (temp1+temp2)/2 - 30);
 		_delay_ms(500); // For stability
 	}
 }
