@@ -7,8 +7,8 @@
 
 #define F_CPU 1000000UL
 #define TEMP_NUM 98
-#define HIGH_CUT 152
-#define LOW_CUT 148
+#define HIGH_CUT 178
+#define LOW_CUT 176
 #define MAX_COUNT 16
 
 int serial_putchar(char, FILE *);
@@ -73,7 +73,7 @@ void do_program(void) {
 		temp2 = get_temp(2);
 		adjust_pwm((temp1+temp2)/2, 0);
 		freq = get_freq(&time, &periods);
- 		fprintf(stdout,"Freq = %ld, time = %d, count = %ld \r\n", freq, time, periods);
+ 		fprintf(stdout,"Freq = %ld, temp = %d \r\n", freq, (temp1+temp2)/2);
 		_delay_ms(500); // For stability
 	}
 }
@@ -158,7 +158,7 @@ unsigned int get_temp(unsigned int channel) {
 	}
 
 	// Calculate temp
-	temp = temp / 16;
+	temp = temp / 8;
 
 	return temp;
 }
@@ -245,7 +245,7 @@ unsigned long get_freq(unsigned int* period_time, unsigned long* periods) {
 			// Calculate frequency and unlock
 			if ((time >= 32000) || (count != 0)) {
 				// Note: The divide by 52 is a calibration
-				freq = (period_count * 1000000l)/(count*65536 + time + (period / 52));
+				freq = (period_count * 1000000l)/(count*65536 + time + (period_count / 52));
 				lock = 1;
 			}
 		}
